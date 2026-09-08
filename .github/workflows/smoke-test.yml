@@ -73,11 +73,20 @@ jobs:
               except Exception:
                   continue
               code = [c for c in nb.get("cells", []) if c.get("cell_type") == "code"]
-              src = sum(len("".join(c.get("source", []))) for c in code)
-              has_out = any(c.get("outputs") for c in code)
-              if code and src > 200 and not has_out:
+              meaningful_src = 0
+              for c in code:
+                  lines = [
+                      line.strip()
+                      for line in "".join(c.get("source", [])).splitlines()
+                      if line.strip()
+                  ]
+                  meaningful_src += sum(len(line) for line in lines if not line.startswith("#"))
+              has_run_evidence = any(
+                  c.get("outputs") or c.get("execution_count") is not None for c in code
+              )
+              if code and meaningful_src > 0 and not has_run_evidence:
                   kind = "error" if final else "warning"
-                  print(f"::{kind} file={p}::{p} has filled code cells but no outputs - "
+                  print(f"::{kind} file={p}::{p} has filled executable code but no run evidence - "
                         "did Colab save an unrun copy? Runtime -> Run all, then save again.")
                   if final:
                       bad.append(p)
