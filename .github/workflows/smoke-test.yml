@@ -60,6 +60,12 @@ jobs:
           # paper_url.txt holds a real URL (final state), it fails the build - a finished
           # track must not ship unexecuted deliverables. Fresh skeletons stay silent.
           import json, glob, sys
+          def executable(cell):
+              for line in "".join(cell.get("source", [])).splitlines():
+                  line = line.strip()
+                  if line and not line.startswith("#"):
+                      return True
+              return False
           url = ""
           try:
               url = open("submission/paper_url.txt").readline().strip()
@@ -73,9 +79,9 @@ jobs:
               except Exception:
                   continue
               code = [c for c in nb.get("cells", []) if c.get("cell_type") == "code"]
-              src = sum(len("".join(c.get("source", []))) for c in code)
-              has_out = any(c.get("outputs") for c in code)
-              if code and src > 200 and not has_out:
+              exec_code = [c for c in code if executable(c)]
+              has_run = any(c.get("outputs") or c.get("execution_count") is not None for c in exec_code)
+              if exec_code and not has_run:
                   kind = "error" if final else "warning"
                   print(f"::{kind} file={p}::{p} has filled code cells but no outputs - "
                         "did Colab save an unrun copy? Runtime -> Run all, then save again.")
