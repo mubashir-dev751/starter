@@ -102,8 +102,6 @@ Based on the model output and our understanding of its limits, we recommend the 
 All code and notebooks used in this work are available in the repository (see `work/notebooks/`). The main notebooks are:
 
 - `ML-02` – research question and data exploration
-- `ML-03` – ML task framing
-- `ML-04` – data contract and leakage demonstration
 - `ML-07` – baseline action score and top‑20 review
 - `ML-08` – capstone modeling (split, train, compare)
 - `ML-09` – validation and claim audit
