@@ -111,7 +111,7 @@ To reproduce the analysis:
 
 1. Clone the repository.
 2. Install dependencies: `pip install -r requirements.txt`
-3. Run the notebooks in order. The final outputs (ranked queue, figures) are saved to `work/outputs/` and `work/figures/`.
+3. Run the notebooks in order. The final outputs (ranked queue, figures) are saved to `work/outputs/`.
 
 The dataset `content_refresh_anonymized.csv` is available in the repository or via the provided raw URL in the notebooks.
 
