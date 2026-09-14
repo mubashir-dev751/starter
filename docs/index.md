@@ -1,119 +1,326 @@
-# Prioritizing Content Refresh Decisions with Machine Learning
+Prioritizing Content Refresh Decisions with Machine Learning
+Abstract
 
-## Abstract
-We investigate whether machine learning can outperform a heuristic baseline for prioritizing content refresh candidates in a large, multi‑client search dataset. This work addresses the FlyRank content team’s challenge of prioritizing which pages to refresh amid a large backlog and limited editorial capacity. Using 30,000 anonymized content performance records, we build a ranking model that predicts the probability that a page is declining in organic traffic. Our grouped‑split evaluation shows that a Random Forest model achieves a ROC‑AUC of 0.601 and a Precision@50 of 0.640, compared to 0.490 and 0.480 for the baseline heuristic. The results indicate that ML‑based ranking can provide directional decision‑support to content teams, though the model’s performance is limited by overlapping time windows in the features and label. We recommend the model be used only to surface pages for human review, never for automated content deletion or redirects.
+This study investigates whether machine learning can outperform a heuristic baseline for prioritizing content refresh candidates in a large multi-client search dataset. The work addresses a common content operations challenge: identifying which pages should be reviewed first when editorial resources are limited. Using 30,000 anonymized content-performance records, we develop a ranking model that estimates the likelihood that a page is experiencing organic traffic decline. A grouped validation strategy that holds out entire clients shows that a Random Forest model achieves a ROC-AUC of 0.601 and a Precision@50 of 0.640, outperforming a heuristic baseline that achieves 0.490 and 0.480 respectively. The results suggest that ML-based ranking can provide useful decision-support for content review workflows, although overlapping feature and label windows limit the strength of the conclusions and require careful interpretation.
 
-## 1. Introduction / Problem Statement
-FlyRank’s content operations face a common bottleneck: a large backlog of pages that may need updating, but limited editorial capacity to review them all. Static rules often flag every page that shows any traffic decline, producing an unmanageable queue where high‑value opportunities are buried under noise. The goal of this work is to build a *prioritized queue* that helps human editors decide **which declining pages to review first**.
+1. Introduction / Problem Statement
 
-We frame this as a ranking problem: given a set of observable signals (impressions, average position, staleness, engagement), can we assign a score to each page that correlates with the likelihood that it is currently experiencing a traffic decline? A machine learning model can capture non‑linear interactions and client‑specific patterns that would be impractical to encode in a fixed rule.
+Content teams often face a practical prioritization problem: a large backlog of pages may benefit from review, but editorial capacity is limited. Traditional rule-based approaches frequently flag every page showing signs of decline, producing large queues that make it difficult to identify the most valuable opportunities.
 
-Our primary question is: **Can a Random Forest model trained on historical content performance data rank true declining pages higher than a simple heuristic baseline, as measured by Precision@50?** The answer to this question provides decision‑support for human editors, not a replacement for their judgment.
+The objective of this project is to build a prioritized review queue that helps editors determine which pages warrant investigation first. Rather than replacing human decision-making, the goal is to improve allocation of editorial attention.
 
-## 2. Data
-We use the `content_refresh_anonymized.csv` dataset provided as part of the FlyRank ML Internship. The dataset contains **30,000 rows**, each representing one content item’s 90‑day performance window across 32 anonymized clients. The data includes both Search Console (GSC) and Google Analytics 4 (GA4) metrics, but for this analysis we rely primarily on the following fields:
+We frame the problem as a ranking task. Given observable search and engagement signals such as impressions, clicks, ranking position, content freshness, and user engagement metrics, can a model assign higher scores to pages that exhibit characteristics associated with decline?
 
-- `impressions_90d`, `clicks_90d`, `ctr` – search performance
-- `avg_position` – average position in search results (0 indicates missing data)
-- `days_since_last_update` – staleness
-- `word_count` – content length (with some missing values)
-- `engagement_rate`, `scroll_rate`, `ai_traffic_pct` – user engagement signals
-- `content_type` – categorical content type
-- `trend_direction` – ground truth label for decline (used only for evaluation)
+The primary research question is:
 
-We exclude `trend_pct` and `trend_direction` from the feature set to avoid target leakage; they are used solely to define the evaluation label and measure model performance.
+Can a machine learning model rank true declining pages higher than a simple heuristic baseline, thereby improving content-refresh prioritization?
 
-**Data exclusions:** No rows were removed from the dataset. Missing values (`avg_position = 0`, missing `word_count`) were handled explicitly during preprocessing with median imputation and missing‑value flags.
+A positive answer would provide evidence that ML-based prioritization may improve operational efficiency compared to static rules.
 
-## 3. Methodology
-### 3.1 Label Definition
-The target variable `is_declining_label` is derived from `trend_direction`: we assign `1` if the value is `'down'`, otherwise `0`. This is an observed outcome based on the dataset’s internal trend classification, not a rule we defined ourselves. We acknowledge that this label may be noisy and is not a perfect proxy for “needs refresh,” but it serves as a reasonable signal for evaluation.
+2. Data
 
-### 3.2 Feature Engineering
-We engineer the following features:
-- `has_no_position_data` – binary flag for `avg_position == 0`
-- `clean_avg_position` – copy of `avg_position` with 0 replaced by `NaN` (to be imputed)
-- `has_missing_word_count` – binary flag for missing `word_count`
-- `clean_word_count` – `word_count` with missing values filled by median
+This analysis uses the content_refresh_anonymized.csv dataset provided as part of the FlyRank ML Internship program.
 
-The final feature set includes: `impressions_90d`, `clicks_90d`, `ctr`, `clean_avg_position`, `has_no_position_data`, `days_since_last_update`, `clean_word_count`, `has_missing_word_count`, `engagement_rate`, `scroll_rate`, `ai_traffic_pct`, and `content_type` (one‑hot encoded).
+The dataset contains approximately 30,000 content records spanning 32 anonymized clients. Each record represents a content asset summarized across a ninety-day observation window.
 
-### 3.3 Validation Design
-We use a **grouped split by `client_id`** to ensure that no client appears in both training and test sets. This prevents the model from learning client‑specific quirks that would not generalize to unseen clients. We use an 80/20 split with `GroupShuffleSplit` (random seed 42).
+The analysis uses the following variables:
 
-We compare three approaches:
-1. **Heuristic Baseline** – a rule that combines staleness (`days_since_last_update >= 180`), striking distance (`avg_position` between 11 and 30), and log impressions.
-2. **Logistic Regression** – linear model with standard scaling and one‑hot encoding.
-3. **Random Forest** – 100 trees, max depth 8, using the same preprocessing pipeline.
+impressions_90d
+clicks_90d
+ctr
+avg_position
+days_since_last_update
+word_count
+engagement_rate
+scroll_rate
+ai_traffic_pct
+content_type
 
-All models are evaluated on the same held‑out test set using ROC‑AUC, Precision@20, Precision@50, and Precision@100.
+The dataset also contains:
 
-### 3.4 Leakage Checks
-We performed a thorough leakage audit:
-- **Target leakage:** `trend_direction` and `trend_pct` are excluded from features.
-- **Time‑window overlap:** The features `impressions_90d` and `clicks_90d` span a 90‑day window that may overlap with the 30‑day window used to compute the decline label. This overlap artificially inflates model performance because the model can partially “see” the outcome during training. We explicitly flag this as a limitation; in a production setting, features must be strictly time‑boxed to precede the label window.
-- **Missing data:** `avg_position = 0` is treated as missing, not as a rank of zero.
+trend_direction
+trend_pct
 
-## 4. Results
-### 4.1 Model Comparison on Grouped Split
-| Method | ROC‑AUC | Precision@20 | Precision@50 | Precision@100 |
-|--------|---------|--------------|--------------|---------------|
-| Test set base rate | 0.500 | 0.511 | 0.511 | 0.511 |
-| Heuristic baseline | 0.490 | 0.450 | 0.480 | 0.430 |
-| Logistic Regression | 0.563 | 0.600 | 0.620 | 0.570 |
-| Random Forest (max_depth=8) | **0.601** | 0.450 | **0.640** | **0.640** |
+These variables are excluded from model features and used only for evaluation and label construction.
 
-The Random Forest model outperforms the heuristic baseline and logistic regression in ROC‑AUC and Precision@50/100. However, the improvement is modest, and the model’s ROC‑AUC of 0.601 indicates limited discriminative power.
+Data Quality and Exclusions
 
-![Model comparison chart](figures/model_comparison.png)  
-*Figure 1: Precision@k comparison across methods on the grouped test split.*
+No rows were removed from the dataset.
 
-### 4.2 Feature Importance
-Permutation importance on the test set reveals that `impressions_90d` is the most influential feature, followed by `clicks_90d`, `scroll_rate`, and `clean_avg_position`. This suggests that high‑traffic pages that are slipping in engagement are most likely to be flagged by the model.
+Missing values were handled as follows:
 
-![Feature importance](figures/feature_importance.png)  
-*Figure 2: Permutation importance (decrease in ROC‑AUC) for top features.*
+avg_position = 0 was interpreted as missing rather than a valid search position.
+Missing word_count values were imputed using the median.
+Missing-value indicator flags were created where appropriate.
 
-### 4.3 Error Analysis
-**False positives** (predicted decline, actual stable) tend to be old pages with weak CTR on page 2. The model over‑penalizes staleness and high position even when traffic is stable. **False negatives** (predicted stable, actual decline) are often pages with recent updates and good rankings but a sharp drop – possibly due to a content change that hurt relevance. The model’s reliance on aggregate features misses these edge cases.
+No client names, domains, URLs, or raw search queries were used in the analysis.
 
-## 5. Limitations & Honest Framing
-This work must be interpreted carefully:
+3. Methodology
+3.1 Label Definition
 
-- **No causal claims:** The model identifies associations, not causation. We cannot say that refreshing a high‑scoring page will reverse its decline.
-- **Time‑window leakage:** The 90‑day features overlap with the 30‑day label window, inflating performance metrics. In a production deployment, we would compute features strictly from periods before the label window.
-- **Weak overall signal:** The ROC‑AUC of 0.601 is only slightly above random chance. The model provides a *ranking* improvement over the baseline but is not a high‑confidence classifier.
-- **Label noise:** The `trend_direction` label may be derived from data that itself contains noise (e.g., seasonal effects, algorithm changes). The model cannot distinguish between a page that is truly stale and one that is temporarily down.
-- **Generalization:** The model is trained on 32 clients and may not transfer to clients with different content types or search patterns.
+The target variable, is_declining_label, is derived from the provided trend_direction field.
 
-We therefore position this model as **directional decision‑support** for content teams: it surfaces pages that *share characteristics* with historically declining pages, but a human must always verify the context and make the final call.
+Declining (down) = 1
+All other values = 0
 
-## 6. Ranked Recommendations (Action Playbook)
-Based on the model output and our understanding of its limits, we recommend the following actions, in order of priority:
+This label represents an observed outcome defined in the dataset and should not be interpreted as a direct measure of refresh necessity. A page experiencing decline may require a refresh, a technical fix, competitive analysis, or no action at all.
 
-1. **Integrate the ML queue into the content review workflow.** Use the model’s probability scores to rank pages for human review, focusing on the top 20% of the queue each week.
-2. **Use reason codes to guide reviewers.** For each flagged page, automatically assign a reason code based on the dominant feature (e.g., “Stale Content”, “Low Engagement”, “Missing Position Data”). This helps the editor quickly understand *why* the page was flagged.
-3. **Implement a mandatory human audit before any action.** The model must never trigger automated content deletion, redirects, or unpublishing. A human must confirm that the decline is real and that a refresh is the appropriate response.
-4. **Fix the time‑window leakage in the feature pipeline.** To obtain honest performance metrics and avoid over‑optimistic expectations, recompute features using only data that precedes the label window. This will likely reduce the apparent AUC but give a more realistic view of model usefulness.
-5. **Monitor model drift and data quality.** Track the distribution of `has_no_position_data` and the model’s score distribution. A sudden increase in missing data or a shift in score distribution indicates that the input pipeline has changed and the model needs retraining.
-6. **Do not use model scores for individual performance evaluation.** The scores reflect page characteristics, not the quality of the writers or SEOs.
+The label is therefore treated as a directional signal suitable for ranking evaluation.
 
-## 7. Reproducibility
-All code and notebooks used in this work are available in the repository (see `work/notebooks/`). The main notebooks are:
+3.2 Feature Engineering
 
-- `ML-02` – research question and data exploration
-- `ML-07` – baseline action score and top‑20 review
-- `ML-08` – capstone modeling (split, train, compare)
-- `ML-09` – validation and claim audit
-- `ML-10` – content action playbook and exports
+The following engineered features were created:
 
-To reproduce the analysis:
+Position Signals
+has_no_position_data
+clean_avg_position
+Content Signals
+clean_word_count
+has_missing_word_count
+Search Performance Signals
+impressions_90d
+clicks_90d
+ctr
+Engagement Signals
+engagement_rate
+scroll_rate
+ai_traffic_pct
+Freshness Signals
+days_since_last_update
+Content Classification
+One-hot encoded content_type
 
-1. Clone the repository.
-2. Install dependencies: `pip install -r requirements.txt`
-3. Run the notebooks in order. The final outputs (ranked queue, figures) are saved to `work/outputs/`.
+The feature set intentionally excludes variables directly used to define the evaluation label.
 
-The dataset `content_refresh_anonymized.csv` is available in the repository or via the provided raw URL in the notebooks.
+3.3 Validation Design
 
-## 8. Acknowledgments & Data Credit
-Built on the [FlyRank ML Internship dataset](https://flyrank.ai). This dataset was provided as part of the FlyRank ML Internship program. We thank the program organizers for making this data available for learning purposes.
+A key objective of this study is estimating how well the model generalizes to unseen clients.
+
+To achieve this, an 80/20 grouped split was created using GroupShuffleSplit, with client_id as the grouping variable and a fixed random seed of 42.
+
+This design ensures that records from the same client cannot appear in both training and testing partitions.
+
+Three approaches are compared:
+
+Heuristic Baseline
+
+A rule-based score combining:
+
+Content staleness (days_since_last_update >= 180)
+Striking-distance rankings (avg_position between 11 and 30)
+Log-transformed impressions
+Logistic Regression
+
+A linear baseline using standardized numeric features and one-hot encoded categorical variables.
+
+Random Forest
+
+A Random Forest classifier consisting of:
+
+100 trees
+Maximum depth of 8
+Identical preprocessing pipeline
+
+Models were evaluated using:
+
+ROC-AUC
+Precision@20
+Precision@50
+Precision@100
+3.4 Leakage Assessment
+
+Potential sources of leakage were reviewed before model evaluation.
+
+Target Leakage
+
+The variables:
+
+trend_direction
+trend_pct
+
+were excluded from all model features.
+
+Temporal Overlap
+
+A more subtle issue exists because the ninety-day feature windows may overlap with the period used to derive decline labels.
+
+As a result, the model may partially observe information correlated with the outcome, potentially inflating performance metrics.
+
+Accordingly, this project should be interpreted primarily as a ranking and prioritization exercise rather than a strict future forecasting system.
+
+A production-grade implementation would require feature windows that terminate before the label window begins.
+
+Missing Data Handling
+
+Missing ranking positions were treated as unavailable data rather than valid zero-rank positions.
+
+4. Results
+4.1 Model Performance
+Method	ROC-AUC	Precision@20	Precision@50	Precision@100Base Rate	0.500	0.511	0.511	0.511
+Heuristic Baseline	0.490	0.450	0.480	0.430
+Logistic Regression	0.563	0.600	0.620	0.570
+Random Forest	0.601	0.450	0.640	0.640
+
+The Random Forest model achieves the strongest overall ranking performance and exceeds both the heuristic baseline and Logistic Regression on ROC-AUC, Precision@50, and Precision@100.
+
+Although the gains are statistically encouraging, the overall performance remains moderate and should not be interpreted as evidence of a highly predictive system.
+
+Figure 1: Precision@k comparison across models.
+
+4.2 Feature Importance
+
+Permutation importance analysis identifies the following variables as the strongest contributors:
+
+impressions_90d
+clicks_90d
+scroll_rate
+clean_avg_position
+
+These findings suggest that traffic scale, engagement patterns, and ranking visibility contribute most strongly to the model's prioritization behavior.
+
+Figure 2: Permutation importance of top predictive features.
+
+4.3 Error Analysis
+False Positives
+
+False positives often consist of:
+
+Older content
+Weak CTR
+Lower ranking positions
+Stable traffic despite appearing vulnerable
+
+The model appears to over-weight signals related to content age and visibility.
+
+False Negatives
+
+False negatives frequently include:
+
+Recently updated pages
+Strong rankings
+Abrupt traffic loss
+
+These cases may reflect external factors not represented in the available feature set.
+
+5. Limitations and Honest Framing
+
+Several limitations should be considered when interpreting the results.
+
+Observational Analysis
+
+The study identifies associations rather than causal relationships.
+
+The results do not demonstrate that refreshing a page will improve performance.
+
+Temporal Leakage Risk
+
+Partial overlap between feature windows and outcome windows likely inflates measured performance.
+
+Future studies should enforce strict chronological separation.
+
+Limited Predictive Strength
+
+A ROC-AUC of 0.601 indicates modest discrimination.
+
+The model is more useful for prioritization than prediction.
+
+Label Noise
+
+The decline label may reflect seasonality, market conditions, competitive activity, tracking variation, or algorithm changes.
+
+Not all observed declines represent content-quality problems.
+
+External Validity
+
+The dataset includes only 32 anonymized clients.
+
+Performance may differ for other industries, websites, or search environments.
+
+Appropriate Use
+
+The system should be used exclusively for decision support.
+
+It should not be used to automate:
+
+Content deletion
+URL removals
+Redirects
+Editorial performance evaluation
+
+Human review remains essential.
+
+6. Ranked Recommendations
+
+Based on the model outputs and observed limitations, the following action framework is recommended.
+
+Priority 1: Review High-Score Candidates
+
+Focus editorial review on pages appearing within the highest-scoring segment of the ranking queue.
+
+These pages represent the strongest concentration of historically declining characteristics.
+
+Priority 2: Add Explainable Reason Codes
+
+Provide reviewers with feature-based explanation labels such as:
+
+Stale Content
+Declining Engagement
+Weak Visibility
+Missing Position Data
+
+This improves adoption and reduces reviewer effort.
+
+Priority 3: Establish a Tiered Review Framework
+Priority Tier	Characteristics	Recommended ActionP1	High score, high traffic	Immediate review
+P2	Medium score, stale content	Scheduled refresh review
+P3	Moderate score, stable traffic	Monitor
+P4	Low score, low business impact	Defer
+Priority 4: Remove Temporal Overlap in Future Versions
+
+Future iterations should construct all features from periods that occur strictly before outcome measurement windows.
+
+This will produce more trustworthy estimates of real-world performance.
+
+Priority 5: Monitor Model Drift
+
+Track:
+
+Missing-data frequency
+Score distributions
+Feature distributions
+Precision@k over time
+
+Significant shifts may indicate retraining is required.
+
+7. Reproducibility
+
+All notebooks, scripts, and outputs are maintained in the project repository.
+
+Key notebooks include:
+
+ML-02 Data Exploration
+ML-07 Baseline Opportunity Scoring
+ML-08 Model Development
+ML-09 Validation and Claim Audit
+ML-10 Recommendation Framework
+
+To reproduce the project:
+
+Clone the repository.
+Install dependencies using:
+Shell
+1
+pip install -r requirements.txt
+Show more lines
+Execute notebooks in numerical order.
+Review generated outputs in work/outputs/.
+
+Random seeds were fixed at 42 wherever applicable to improve reproducibility.
+
+8. Acknowledgments and Data Credit
+
+Built on the FlyRank ML Internship Dataset.
+
+Data source: https://flyrank.ai/
+
+This project was completed as part of the FlyRank ML Internship program using anonymized search-performance and engagement data. All analysis, interpretations, recommendations, and limitations presented in this paper are the author's own.
